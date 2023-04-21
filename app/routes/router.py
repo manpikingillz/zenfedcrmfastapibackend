@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints.employee import router as employee_router
+from app.api.v1.endpoints.person import router as person_router
 
 router = APIRouter()
 
-router.include_router(employee_router, tags=["Employees"])
+router.include_router(person_router, tags=["Persons"])

@@ -1,1 +1,1 @@
-from .employee import *
+from .person import *
