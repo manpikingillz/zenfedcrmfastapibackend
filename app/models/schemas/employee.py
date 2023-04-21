@@ -17,7 +17,7 @@ class EmployeeUpdate(BaseModel):
 
 
 # Employee schema for returning employees in API responses
-class Employee(EmployeeCreate):
+class EmployeeRetrieve(EmployeeCreate):
     id: int
 
     class Config:
@@ -25,7 +25,7 @@ class Employee(EmployeeCreate):
 
 
 # Country schema for returning countries in API responses
-class Country(BaseModel):
+class CountryRetrieve(BaseModel):
     id: int
     name: str
 
