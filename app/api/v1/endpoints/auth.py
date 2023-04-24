@@ -1,7 +1,7 @@
+import os
 from typing import Annotated
-from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, status, APIRouter
+from fastapi import Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from app.models.schemas.user import Token, TokenData, UserModel, UserInDB
 from app.models.sql.user import User
@@ -11,31 +11,25 @@ from typing import Annotated
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.database.session import get_db
+from datetime import timezone
 from sqlalchemy.orm import Session
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # to get a string like this run:
 # openssl rand -hex 32
+
 # JWT_SECRET_KEY and JWT_REFRESH_SECRET_KEY can be any strings,
 # but make sure to keep them secret and set them as environment variables.
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
-# JWT_SECRET_KEY = os.environ['JWT_SECRET_KEY']   # should be kept secret
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+JWT_REFRESH_SECRET_KEY = os.environ.get('JWT_REFRESH_SECRET_KEY')
+
 ALGORITHM = "HS256"
+
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
-JWT_REFRESH_SECRET_KEY = \
-    '09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7'
-# JWT_REFRESH_SECRET_KEY = os.environ['JWT_REFRESH_SECRET_KEY']    # should be kept secret
-
-
-fake_users_db = {
-    "johndoe": {
-        "username": "johndoe",
-        "full_name": "John Doe",
-        "email": "johndoe@example.com",
-        "hashed_password": "fakehashedsecret",
-        "disabled": False,
-    },
-}
+REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 router = APIRouter()
@@ -57,87 +51,65 @@ def get_password_hash(password):
     Takes a plain password and returns the hash for
     it that can be safely stored in the database
     """
-    breakpoint()
     return pwd_context.hash(password)
 # ####### End of tils for verifying and hasshing passwoord
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    """
+    Create an access token for the given user.
+
+    Returns:
+    - A JWT access token string that can be used to
+    authenticate the user in subsequent requests.
+    """
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+    to_encode["exp"] = expire
+    return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
 
 
 def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
+    """
+    Create a refresh token for the given user.
+
+    Returns:
+    - A JWT refresh token string that can be used to refresh the access token.
+    """
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-# def get_user(db, username: str):
-#     if username in db:
-#         user_dict = db[username]
-#         return UserInDB(**user_dict)
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=REFRESH_TOKEN_EXPIRE_MINUTES
+        )
+    to_encode["exp"] = expire
+    return jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, algorithm=ALGORITHM)
 
 
-def authenticate_user(fake_db, username: str, password: str):
-    user = get_user(fake_db, username)
-    if not user:
+def authenticate_user(username: str, plain_password: str, db: Session):
+    """
+    Authenticate user by checking if the username and password match.
+    """
+    if user := get_user(username=username, db=db):
+        return user if verify_password(
+            plain_password, user.password) else False
+    else:
         return False
-    if not verify_password(password, user.hashed_password):
-        return False
-    return user
 
-
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-    user = get_user(fake_users_db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
-
-
-async def get_current_active_user(
-    current_user: Annotated[UserModel, Depends(get_current_user)]
-):
-    if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
-
-
-@router.get("/users/me/", response_model=UserModel)
-async def read_users_me(
-    current_user: Annotated[UserModel, Depends(get_current_active_user)]
-):
-    return current_user
 
 # USER LOGIN ------------------------------------------------------
 @router.post("/token", response_model=Token)
-async def login_for_access_token(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
+async def login_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Session = Depends(get_db)
 ):
-    user = authenticate_user(fake_users_db, form_data.username, form_data.password)
+    user = authenticate_user(form_data.username, form_data.password, db=db)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -152,7 +124,7 @@ async def login_for_access_token(
 
     # Refresh Token
     refresh_token_expires = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
-    refresh_token = create_access_token(
+    refresh_token = create_refresh_token(
         data={"sub": user.username}, expires_delta=refresh_token_expires
     )
     return {
@@ -184,10 +156,39 @@ async def create_user(create_user: UserModel,  db: Session = Depends(get_db)):
     db.refresh(db_user)
     return {'message': "User created successfully"}
 
-    # user = {
-    #     'email': data.email,
-    #     'password': get_password_hash(data.password),
-    #     # 'id': str(uuid4())
-    # }
-    # db[data.email] = user    # saving user to database
-    # return user
+
+async def get_current_user(
+        token: Annotated[str, Depends(oauth2_scheme)],
+        db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+    except JWTError as e:
+        raise credentials_exception from e
+    user = get_user(username=token_data.username, db=db)
+    if user is None:
+        raise credentials_exception
+    return user
+
+
+async def get_current_active_user(
+    current_user: Annotated[UserModel, Depends(get_current_user)]
+):
+    if current_user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+
+@router.get("/users/me/", response_model=UserModel)
+async def read_users_me(
+    current_user: Annotated[UserModel, Depends(get_current_active_user)]
+):
+    return current_user
