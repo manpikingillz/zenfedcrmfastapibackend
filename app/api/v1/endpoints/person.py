@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Annotated
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -6,8 +6,12 @@ from app.database.session import get_db
 from app.models.schemas.person import (
     PersonRetrieve, PersonCreate, PersonUpdate)
 from app.models.sql.person import Person
+from fastapi.security import OAuth2PasswordBearer
+
 
 router = APIRouter()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 # Define the API endpoints
@@ -28,10 +32,12 @@ def create_person(person: PersonCreate, db: Session = Depends(get_db)):
 
 # Read persons
 @router.get("/persons/", response_model=List[PersonRetrieve])
-def read_persons(skip: int = 0, limit: int = 100,
-                 db: Session = Depends(get_db)):
+def read_persons(
+        token: Annotated[str, Depends(oauth2_scheme)],
+        skip: int = 0, limit: int = 100,
+        db: Session = Depends(get_db)):
     persons = db.query(Person).offset(skip).limit(limit).all()
-    return persons
+    return {'person': persons, "token": token}
 
 
 # Read a single person by ID
