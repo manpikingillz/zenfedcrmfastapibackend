@@ -22,8 +22,8 @@ app.add_middleware(
 
 # Create the database tables (if they don't exist)
 Base.metadata.create_all(bind=engine)
-
-app.include_router(api_router, prefix="/api/v1", tags=["ZenFed CRM v1 Endpoints"])
+# prefix="/api/v1", 
+app.include_router(api_router, tags=["ZenFed CRM v1 Endpoints"])
 
 if __name__ == "__main__":
     import uvicorn

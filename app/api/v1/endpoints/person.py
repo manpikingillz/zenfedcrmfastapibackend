@@ -7,11 +7,14 @@ from app.models.schemas.person import (
     PersonRetrieve, PersonCreate, PersonUpdate)
 from app.models.sql.person import Person
 from fastapi.security import OAuth2PasswordBearer
+from app.api.v1.endpoints.auth import get_current_user
+
+from app.models.sql.user import User
 
 
 router = APIRouter()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 # Define the API endpoints
@@ -33,11 +36,10 @@ def create_person(person: PersonCreate, db: Session = Depends(get_db)):
 # Read persons
 @router.get("/persons/", response_model=List[PersonRetrieve])
 def read_persons(
-        token: Annotated[str, Depends(oauth2_scheme)],
+        # current_user: User = Depends(get_current_user),
         skip: int = 0, limit: int = 100,
         db: Session = Depends(get_db)):
-    persons = db.query(Person).offset(skip).limit(limit).all()
-    return {'person': persons, "token": token}
+    return db.query(Person).offset(skip).limit(limit).all()
 
 
 # Read a single person by ID
