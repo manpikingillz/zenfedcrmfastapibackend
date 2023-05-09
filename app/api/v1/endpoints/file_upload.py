@@ -1,6 +1,6 @@
 import os
 import shutil
-from fastapi import FastAPI, File, HTTPException, UploadFile, APIRouter
+from fastapi import HTTPException, UploadFile, APIRouter
 
 router = APIRouter()
 
@@ -41,4 +41,6 @@ def validate_file(file: UploadFile):
     # check the content type (MIME type)
     content_type = file.content_type
     if content_type not in ["image/jpeg", "image/png", "image/gif"]:
-        raise HTTPException(status_code=400, detail="Invalid file type. Only upload Images")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only upload Images")
